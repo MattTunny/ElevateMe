@@ -1,0 +1,107 @@
+# To deploy SAM:
+# sam package --template-file back-end.yaml --s3-bucket your-unique-bucket-name --s3-prefix back-end --output-template back-end-output.yaml
+# sam deploy --template-file back-end-output.yaml --stack-name ElevateMeBackEnd --capabilities CAPABILITY_IAM
+
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda function to add and remove users to AD groups.
+
+Parameters:
+
+  WebHook:
+    Description: WebHook URL
+    Type: String
+    Default: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+
+  LdapServer:
+    Description: Active Directory Name or IP of LDAP Server
+    Type: String
+    Default: 192.168.0.1
+
+  LdapUser:
+    Description: service account that only has access to add/remove users to groups you specify
+    Type: String
+    Default: elevateme_sa
+
+  # Use SSM for Production...
+  # A Kitten dies everytime default passwords are used.
+  LdapPassword:
+    Description: Password for service account
+    Type: String
+    Default: Password1
+
+  Region:
+    Description: region e.g ap-southeast-2 for Sydney
+    Type: String
+    Default: ap-southeast-2
+
+  SecurityGroupLambda:
+    Description: Ec2 Security Group for your Private Lambda, should only need 0.0.0.0/0 outbound with no inbound
+    Type: String
+    Default: sg-1234567890123
+
+  InternalSubnets:
+    Description: Subnets (two or more) of your private subnets for lambda to run from
+    Type: "List<AWS::EC2::Subnet::Id>"
+    Default: subnet-123a,subnet-123b,subnet-123c
+
+
+Resources:
+
+  # SQS Queue
+  Queue:
+    Type: AWS::SQS::Queue
+
+  # Back End Lambda Function
+  ElevateMeBackEnd:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: elevateme-back-end.lambda_handler
+      Timeout: 25
+      MemorySize: 256
+      Runtime: python3.6
+      CodeUri: ./source/elevateme-back-end.zip
+      Description: Lambda function to elevate users and groups then moving them into correct AD groups
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole  # Managed Policy for Internal VPC Lambda's
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Table
+        - SQSPollerPolicy:
+            QueueName: !GetAtt Queue.Arn
+      VpcConfig:
+        SecurityGroupIds: 
+          - !Ref SecurityGroupLambda
+        SubnetIds: 
+          - !Select [0, !Ref InternalSubnets]
+          - !Select [1, !Ref InternalSubnets]
+          - !Select [2, !Ref InternalSubnets]
+      Events:
+        MySQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Queue.Arn
+            BatchSize: 1
+      Environment:
+        Variables:
+          WEBHOOK: !Ref WebHook
+          LDAPSERVER: !Ref LdapServer
+          LDAPUSER: !Ref LdapUser
+          LDAPPASSWORD: !Ref LdapPassword
+          REGION: !Ref Region
+          DBTABLE: !Ref Table
+  
+  # DynamoDB Table to store elevated users
+  Table:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      SSESpecification:
+          SSEEnabled: True
+      AttributeDefinitions:
+        - AttributeName: Id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+

@@ -1,0 +1,56 @@
+# To Deploy SAM:
+# sam package --template-file front-end.yaml --s3-bucket your-unique-bucket-name  --s3-prefix front-end --output-template front-end-output.yaml
+# sam deploy --template-file front-end-output.yaml --stack-name ElevateMeFrontEnd --capabilities CAPABILITY_IAM
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: >-
+  A function that handles a Slack slash command and echoes the details back to
+  the channel.
+
+Parameters:
+
+  # grab from back-end resource
+  SQSqueueName:
+    Description: SQS Queue NAME from back-end template (Name only, no https:// etc)
+    Type: String
+    Default: YOUR-SQS-QUEUE-NAME
+
+  # grab from back-end resource
+  SQSqueue:
+    Description: SQS Queue WITH https://
+    Type: String
+    Default: https://SQS-URL-ACCOUNT-NUMBER-ETC/YOUR-SQS-QUEUE-NAME
+
+  SlackToken:
+    Description: SlackToken 
+    Type: String
+    Default: YOUR-SLACK-TOKEN
+
+Resources:
+  slackechocommandpython:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python2.7
+      CodeUri: .
+      Description: >-
+        A function that handles a Slack slash command and echoes the details
+        back to the user.
+      MemorySize: 128
+      Timeout: 8
+      Policies:
+        - AWSLambdaBasicExecutionRole  # Managed Policy for Internal VPC Lambda's
+        - SQSSendMessagePolicy:
+            QueueName: !Ref SQSqueueName
+      Events:
+        Api1:
+          Type: Api
+          Properties:
+            Path: /elevateme
+            Method: post
+      Environment:
+        Variables:
+          SQSQUEUE: !Ref SQSqueue
+          SQSQUEUENAME: !Ref SQSqueueName
+          SLACKTOKEN: !Ref SlackToken

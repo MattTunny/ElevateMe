@@ -1,0 +1,87 @@
+# To deploy SAM:
+# sam package --template-file cron-revoker.yaml --s3-bucket your-unique-bucket-name  --s3-prefix cron-revoker --output-template cron-revoker-output.yaml
+# sam deploy --template-file cron-revoker-output.yaml --stack-name ElevateMeRevoker --capabilities CAPABILITY_IAM
+
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda function to revoke users from elevate me after time has expired.
+Parameters:
+
+  WebHook:
+    Description: WebHook URL
+    Type: String
+    Default: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+
+  LdapServer:
+    Description: Active Directory Name or IP of LDAP Server
+    Type: String
+    Default: 192.168.0.1
+
+  LdapUser:
+    Description: service account that only has access to add/remove users to groups you specify
+    Type: String
+    Default: elevateme_sa
+
+  # Use SSM for Production...
+  # A Kitten dies everytime default passwords are used.
+  LdapPassword:
+    Description: Password for service account
+    Type: String
+    Default: Password1
+
+  Region:
+    Description: region e.g ap-southeast-2 for Sydney
+    Type: String
+    Default: ap-southeast-2
+  
+  # Add from backend
+  DbTable:
+    Description: DynamoDB Table Name
+    Type: String
+    Default: YOUR-BACKEND-DYNAMODB-TABLE
+
+  SecurityGroupLambda:
+    Description: Ec2 Security Group for your Private Lambda, should only need 0.0.0.0/0 out with no inbound
+    Type: String
+    Default: sg-1234567890123
+
+  InternalSubnets:
+    Description: Subnets (two or more) of your private subnets for lambda to run from
+    Type: "List<AWS::EC2::Subnet::Id>"
+    Default: subnet-123a,subnet-123b,subnet-123c
+
+Resources:
+
+  ElevateMeCronRevoker:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: elevateme-cron-revoker.lambda_handler
+      Timeout: 300
+      MemorySize: 256
+      Runtime: python3.6
+      CodeUri: ./source/elevateme-cron-revoker.zip
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole  # Managed Policy for Internal VPC Lambda's
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DbTable
+      Description: Lambda function to revoke users from elevate me after time has expired.
+      VpcConfig:
+        SecurityGroupIds: 
+          - !Ref SecurityGroupLambda
+        SubnetIds: 
+          - !Select [0, !Ref InternalSubnets]
+          - !Select [1, !Ref InternalSubnets]
+          - !Select [2, !Ref InternalSubnets]
+      Events:
+        CronJobScheduledEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+      Environment:
+        Variables:
+          WEBHOOK: !Ref WebHook
+          LDAPSERVER: !Ref LdapServer
+          LDAPUSER: !Ref LdapUser
+          LDAPPASSWORD: !Ref LdapPassword
+          REGION: !Ref Region
+          DBTABLE: !Ref DbTable
+
