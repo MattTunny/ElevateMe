@@ -2,6 +2,8 @@
 
 I work for @AWSCloud & my opinions are my own.
 
+Blog post: https://medium.com/@matthewtunny/chatops-with-active-directory-on-serverless-5401aa460eca
+
 
 # Basic Intro
 ElevateMe is a event driven ChatOps security tool for elevating Microsoft AD users using Slack into sensitive Active Directory groups for a limited amount of time in an automated secure way that is visible to all channel members. Here are some use cases it works really well with:
